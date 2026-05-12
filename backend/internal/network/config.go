@@ -3,7 +3,6 @@ package network
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 )
 
 type HotspotConfig struct {
