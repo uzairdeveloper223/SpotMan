@@ -73,14 +73,14 @@ func (s *Server) monitoringLoop() {
 		devices, err := monitor.GetConnectedDevices()
 		if err == nil {
 			counters, _ := s.nft.GetCounters()
-			
+
 			for i := range devices {
 				d := &devices[i]
 				s.store.UpdateDevice(d.MAC, d.Hostname, d.IP)
-				
+
 				upKey := "up_" + d.IP
 				downKey := "down_" + d.IP
-				
+
 				if val, ok := counters[upKey]; ok {
 					d.BytesUp = val
 				}
