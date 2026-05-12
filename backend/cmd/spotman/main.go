@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -48,11 +49,14 @@ func main() {
 	}
 
 	http.HandleFunc("/ws", srv.handleWS)
+	http.HandleFunc("/api/interfaces", srv.handleInterfaces)
 	http.HandleFunc("/api/devices", srv.handleDevices)
 	http.HandleFunc("/api/hotspot/start", srv.handleStartHotspot)
 	http.HandleFunc("/api/hotspot/stop", srv.handleStopHotspot)
 	http.HandleFunc("/api/client/ban", srv.handleBanClient)
 	http.HandleFunc("/api/client/throttle", srv.handleThrottleClient)
+	http.HandleFunc("/api/logs/export", srv.handleExportLogs)
+	http.HandleFunc("/", srv.handleRoot)
 
 	// Start monitoring loop
 	go srv.monitoringLoop()
@@ -124,6 +128,23 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(devices)
+}
+
+func (s *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
+	interfaces, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var result []string
+	for _, iface := range interfaces {
+		name := iface.Name()
+		if name != "lo" {
+			result = append(result, name)
+		}
+	}
+	json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) handleStartHotspot(w http.ResponseWriter, r *http.Request) {
@@ -201,5 +222,55 @@ func (s *Server) handleThrottleClient(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	s.traffic.LimitClient(req.Iface, req.IP, req.Rate)
-	s.store.LogSystemAction(req.IP, "CLIENT_THROTTLE", string(req.Rate))
+	s.store.LogSystemAction(req.IP, "CLIENT_THROTTLE", fmt.Sprintf("%d", req.Rate))
+}
+
+func (s *Server) handleExportLogs(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	logs, err := s.store.GetUsageLogs()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if format == "csv" {
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", "attachment;filename=usage_logs.csv")
+		fmt.Fprintln(w, "MAC,Bytes Up,Bytes Down,Timestamp")
+		for _, l := range logs {
+			fmt.Fprintf(w, "%s,%v,%v,%s\n", l["mac"], l["bytes_up"], l["bytes_down"], l["timestamp"])
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(logs)
+}
+
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	// If the host header doesn't match our local IP or localhost,
+	// it might be a sinkholed domain.
+	// Show a custom "Blocked" page.
+	
+	html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>Site Blocked - SpotMan</title>
+    <style>
+        body { background: #111827; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: #1f2937; padding: 2rem; rounded: 1rem; border: 1px solid #374151; text-align: center; }
+        h1 { color: #ef4444; }
+        p { color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Access Denied</h1>
+        <p>This domain has been blocked by the network administrator via SpotMan.</p>
+        <div style="margin-top: 2rem; font-size: 0.8rem; color: #4b5563;">Powered by SpotMan</div>
+    </div>
+</body>
+</html>`
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
 }

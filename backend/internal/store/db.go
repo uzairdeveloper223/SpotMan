@@ -86,3 +86,29 @@ func (s *Store) SetDeviceIsolation(mac string, isolated bool) error {
 	_, err := s.db.Exec("UPDATE devices SET is_isolated=? WHERE mac=?", isolated, mac)
 	return err
 }
+
+func (s *Store) GetUsageLogs() ([]map[string]interface{}, error) {
+	rows, err := s.db.Query(`
+		SELECT mac, bytes_up, bytes_down, timestamp 
+		FROM usage_logs 
+		ORDER BY timestamp DESC LIMIT 1000`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []map[string]interface{}
+	for rows.Next() {
+		var mac string
+		var up, down int64
+		var ts string
+		rows.Scan(&mac, &up, &down, &ts)
+		logs = append(logs, map[string]interface{}{
+			"mac":       mac,
+			"bytes_up":   up,
+			"bytes_down": down,
+			"timestamp":  ts,
+		})
+	}
+	return logs, nil
+}

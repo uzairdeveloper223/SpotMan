@@ -63,7 +63,7 @@ dhcp-option=option:router,%s
 
 	// Sinkhole blocked domains
 	for _, domain := range cfg.Blocked {
-		content += fmt.Sprintf("address=/%s/127.0.0.1\n", domain)
+		content += fmt.Sprintf("address=/%s/%s\n", domain, cfg.Gateway)
 	}
 
 	return os.WriteFile(path, []byte(content), 0600)

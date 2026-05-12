@@ -14,11 +14,33 @@ function App() {
   const [hotspotStatus, setHotspotStatus] = useState<'stopped' | 'starting' | 'running'>('stopped');
   const [ssid, setSsid] = useState('SpotMan_AP');
   const [password, setPassword] = useState('password123');
-  const [wan, setWan] = useState('eth0');
-  const [lan, setLan] = useState('wlan0');
+  const [availableInterfaces, setAvailableInterfaces] = useState<string[]>([]);
+  const [wan, setWan] = useState('');
+  const [lan, setLan] = useState('');
 
   useEffect(() => {
-    const ws = new WebSocket(`ws://${window.location.hostname}:8080/ws`);
+    const fetchInterfaces = async () => {
+      try {
+        const res = await fetch('/api/interfaces');
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableInterfaces(data);
+          if (data.length >= 2) {
+            setWan(data[0]);
+            setLan(data[1]);
+          } else if (data.length === 1) {
+            setWan(data[0]);
+            setLan(data[0]);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch interfaces');
+      }
+    };
+    fetchInterfaces();
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       setDevices(data);
@@ -125,11 +147,15 @@ function App() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">WAN (Internet)</label>
-                  <input value={wan} onChange={e => setWan(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <select value={wan} onChange={e => setWan(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    {availableInterfaces.map(iface => <option key={iface} value={iface}>{iface}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">LAN (Hotspot)</label>
-                  <input value={lan} onChange={e => setLan(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <select value={lan} onChange={e => setLan(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    {availableInterfaces.map(iface => <option key={iface} value={iface}>{iface}</option>)}
+                  </select>
                 </div>
               </div>
             </div>

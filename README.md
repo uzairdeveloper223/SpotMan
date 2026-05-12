@@ -2,6 +2,8 @@
 
 ![SpotMan Banner](frontend/public/banner.svg)
 
+# WORK IN PROGRESS - WIP
+
 SpotMan is a comprehensive, ISP-level control panel designed for managing and monitoring Linux-based Wi-Fi hotspots. Built for pentesters and network administrators, it provides deep visibility and absolute control over connected clients.
 
 ## Features
