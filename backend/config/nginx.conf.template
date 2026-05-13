@@ -1,0 +1,18 @@
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    
+    # Catch-all server name for intercepted domains
+    server_name _;
+
+    # Root directory for the block page
+    root /opt/spotman/backend/config;
+    
+    # Send all requests to the block page
+    location / {
+        rewrite ^ /block.html break;
+    }
+
+    # Error pages
+    error_page 404 /block.html;
+}
