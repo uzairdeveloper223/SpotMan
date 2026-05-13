@@ -13,18 +13,20 @@ export const Login: React.FC<{ onLogin: (token: string) => void }> = ({ onLogin 
       formData.append('username', username);
       formData.append('password', password);
 
-      const res = await fetch('http://localhost:8000/api/v1/auth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData
-      });
+const res = await fetch('http://localhost:8000/api/v1/auth/token', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+         body: formData
+       });
 
-      if (!res.ok) {
-        throw new Error('Incorrect username or password');
-      }
+       if (!res.ok) {
+         throw new Error('Incorrect username or password');
+       }
 
-      const data = await res.json();
-      onLogin(data.access_token);
+       const data = await res.json();
+       localStorage.setItem('spotman_user', username);
+       sessionStorage.setItem('spotman_pass', password);
+       onLogin(data.access_token);
     } catch (err: any) {
       setError(err.message);
     }

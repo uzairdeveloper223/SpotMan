@@ -22,6 +22,10 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
+class CredentialsChange(BaseModel):
+    old_password: str
+    new_password: str
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
@@ -49,7 +53,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(username=username)
     except jwt.PyJWTError:
         raise credentials_exception
-        
+
     async with get_db() as db:
         async with db.execute("SELECT * FROM users WHERE username = ?", (token_data.username,)) as cursor:
             user = await cursor.fetchone()
@@ -62,30 +66,50 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     async with get_db() as db:
         async with db.execute("SELECT COUNT(*) FROM users") as cursor:
             count = (await cursor.fetchone())[0]
-            
+
         if count == 0:
-            # First time setup: register this user as the admin
             salt = bcrypt.gensalt()
             hashed = bcrypt.hashpw(form_data.password.encode('utf-8'), salt).decode('utf-8')
             await db.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (form_data.username, hashed))
             await db.commit()
-            
+
             async with db.execute("SELECT * FROM users WHERE username = ?", (form_data.username,)) as cursor:
                 user = await cursor.fetchone()
         else:
-            # Normal login process
             async with db.execute("SELECT * FROM users WHERE username = ?", (form_data.username,)) as cursor:
                 user = await cursor.fetchone()
-                
+
             if not user or not verify_password(form_data.password, user["password_hash"]):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Incorrect username or password",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-        
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user["username"]}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.post("/change-credentials")
+async def change_credentials(credentials: CredentialsChange, user: dict = Depends(get_current_user)):
+    """Change the current user's password. The old password must match."""
+    if not verify_password(credentials.old_password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    salt = bcrypt.gensalt()
+    new_hashed = bcrypt.hashpw(credentials.new_password.encode('utf-8'), salt).decode('utf-8')
+
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE users SET password_hash = ? WHERE username = ?",
+            (new_hashed, user["username"])
+        )
+        await db.commit()
+
+    return {"status": "success", "message": "Password updated successfully"}
