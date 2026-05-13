@@ -19,13 +19,13 @@
 SpotMan is a comprehensive, asynchronous API and React-driven control panel built for Linux. It acts as an ISP-level gateway, allowing administrators to natively deploy, shape, and monitor wireless environments. Utilizing low-level Linux utilities (`hostapd`, `dnsmasq`, `tc`, `iptables`, `iw`), SpotMan guarantees high-performance routing with an elegant, modern web interface.
 
 ## ✨ Features
-- **Real-Time Telemetry**: Live websocket streams monitoring bandwidth and active endpoints.
-- **Hardware-Level Traffic Shaping**: Uses Hierarchical Token Buckets (`htb`) and `tc` IP filtering to apply strict upload/download throttles dynamically per MAC address.
-- **Instant Client Deauthentication**: Native `iw` bindings drop malicious connections instantly without rebooting the access point.
-- **DNS Sinkhole**: Custom domain blocking with `dnsmasq` `addn-hosts` override, intercepting queries and routing them to a custom Nginx splash page. SIGHUP reloads block rules without service restart.
-- **Advanced Kernel Routing**: Automated MASQUERADE NAT providing captive portal foundations and internet sharing.
-- **Encrypted Authentication**: End-to-end `PyJWT` backend security locking down all critical commands.
-- **Clean Shutdown**: Full iptables cleanup, IP forwarding reset, interface IP flush, and NetworkManager handback on hotspot stop.
+- **Real-Time Telemetry**: Live websocket streams monitoring bandwidth usage and active connected clients every 2 seconds.
+- **Hardware-Level Traffic Shaping**: Uses Hierarchical Token Buckets (`htb`) and `tc` IP filtering to apply per-client download bandwidth limits dynamically based on MAC address.
+- **Instant Client Deauthentication**: Native `iw` bindings drop malicious connections instantly. Banning a device via the UI triggers immediate deauthentication.
+- **DNS Sinkhole**: Custom domain blocking via `dnsmasq` `addn-hosts` file. New block entries take effect on `SIGHUP` (`systemctl reload dnsmasq`) — no full restart required. Intercepted queries resolve to a local Nginx splash page.
+- **Advanced Kernel Routing**: Automated MASQUERADE NAT providing captive portal foundations and internet sharing over the WAN interface.
+- **Encrypted Authentication**: End-to-end `PyJWT` + `bcrypt` backend security locking down all critical API commands.
+- **Clean Shutdown**: Full iptables cleanup, IP forwarding reset, interface IP flush, and NetworkManager handback on hotspot stop. Leaves the system in its original state.
 
 ## 🚀 Installation & Setup
 
@@ -41,32 +41,62 @@ SpotMan is a comprehensive, asynchronous API and React-driven control panel buil
    ```
    *This automatically sets up `sudoers` rules, Nginx templates, installs OS dependencies (`hostapd`, `dnsmasq`, `iw`, `iproute2`, `iptables`, `sqlite3`, `python3-venv`), creates the empty `custom_blocks.conf`, and configures the default hostapd path.*
 
-3. **Start the Development Server:**
+3. **Start the hotspot service:**
+   ```bash
+   sudo systemctl start spotman
+   ```
+   *First login credentials — **Username**: `admin`, **Password**: `admin`. Please change these immediately after first login.*
+
+4. **Start the Development Server (optional, for dev/testing):**
    ```bash
    ./scripts/start-dev.sh
    ```
    *The React UI will run on `http://localhost:5173` and the FastAPI backend on `http://localhost:8000`.*
 
-## 🔑 Login
-By default, the SQLite database is bootstrapped with the following administrative credentials:
-- **Username**: `admin`
-- **Password**: `admin`
-
-*Note: Please change these credentials or manually modify the `users` SQLite table before rolling out to production.*
-
 ## 🔧 DNS Sinkhole How It Works
-1. Blocked domains are written to `backend/config/custom_blocks.conf` in hosts-file format (`10.0.0.1 example.com`).
-2. The dnsmasq template uses `addn-hosts=` to load this file — `SIGHUP` (via `systemctl reload dnsmasq`) picks up changes without a full restart.
-3. Traffic to blocked domains resolves to the sinkhole IP (default `10.0.0.1`), which Nginx serves a custom block page from.
+1. Blocked domains are written to `backend/config/custom_blocks.conf` in hosts-file format: `10.0.0.1 example.com`.
+2. The dnsmasq template uses `addn-hosts=` to load this file. Sending `SIGHUP` via `systemctl reload dnsmasq` re-reads the file — no full restart needed.
+3. Traffic to blocked domains resolves to the sinkhole IP (`10.0.0.1` by default), which Nginx serves a custom block page from.
 
 ## 🛠️ Hotspot Lifecycle
-- **Start**: NetworkManager releases the wLAN interface → static IP assigned → hostapd + dnsmasq started → readiness verified via polling → NAT iptables rules applied (flushed first) → traffic shaping (tc HTB) initialized.
-- **Stop**: hostapd + dnsmasq stopped → iptables POSTROUTING/FORWARD flushed → `ip_forward` reset to 0 → wLAN IP flushed → NetworkManager regains control → tc root qdisc removed.
+
+**Start sequence:**
+1. NetworkManager releases the wLAN interface (`nmcli device set wlan managed no`)
+2. Static IP `10.0.0.1/24` assigned to the wLAN interface
+3. `hostapd.conf` and `dnsmasq.conf` rendered from templates and copied to `/etc/`
+4. `hostapd` and `dnsmasq` restarted
+5. Readiness polling confirms both services are `active` (up to 10 × 0.5s)
+6. NAT iptables rules applied (existing POSTROUTING/FORWARD flushed first)
+7. Traffic shaping initialized (`tc` HTB root qdisc on wLAN)
+
+**Stop sequence:**
+1. `hostapd` and `dnsmasq` stopped
+2. NAT iptables rules flushed (POSTROUTING + FORWARD)
+3. `net.ipv4.ip_forward` reset to `0`
+4. Static IP flushed from wLAN interface
+5. NetworkManager regains control of wLAN (`nmcli device set wlan managed yes`)
+6. `tc` root qdisc removed from wLAN
 
 ## ⚠️ Limitations
-- **OS Dependency**: Highly tailored for Debian/Ubuntu environments relying heavily on `systemd` and `apt` availability.
-- **Interface Naming**: Currently auto-detects WAN and wLAN interfaces via default route and `/sys/class/net`. For custom network interfaces, core configuration template overrides are required.
-- **Concurrency**: SQLite is utilized for localized storage; for massive enterprise scales handling thousands of parallel authentications, migrating `database.py` to PostgreSQL is recommended.
+- **OS Dependency**: Designed for Debian/Ubuntu environments with `systemd` and `apt`. Other distributions may require adjustments to `install.sh` and service paths.
+- **Interface Detection**: WAN and wLAN interfaces are auto-detected via default route and `/sys/class/net/*/wireless`. Falls back to `eth0`/`wlan0` if detection fails. For non-standard setups, edit the detection functions in `utils/network.py`.
+- **Bandwidth Shaping**: Currently enforces download (RX) limits only. Upload (TX) shaping is not yet implemented despite having database fields for it.
+- **Database**: Uses SQLite for localized storage. For enterprise deployments handling thousands of concurrent authentications, migrating `models/database.py` to PostgreSQL is recommended.
+
+## 📂 Project Structure
+```
+SpotMan/
+├── backend/
+│   ├── app/
+│   │   ├── api/                    # FastAPI route handlers
+│   │   ├── core/                   # Core logic (hotspot, dns, traffic, devices)
+│   │   ├── models/                 # Database models & connection
+│   │   └── utils/                  # System commands & network helpers
+│   ├── config/                     # Templates (dnsmasq, hostapd, nginx, block page)
+│   └── systemd/                    # SpotMan systemd service unit
+├── frontend/                       # React UI (Vite)
+└── scripts/                        # install.sh
+```
 
 ## 👨‍💻 Author
 **Uzair Mughal**
