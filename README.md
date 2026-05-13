@@ -22,9 +22,10 @@ SpotMan is a comprehensive, asynchronous API and React-driven control panel buil
 - **Real-Time Telemetry**: Live websocket streams monitoring bandwidth usage and active connected clients every 2 seconds.
 - **Hardware-Level Traffic Shaping**: Uses Hierarchical Token Buckets (`htb`) and `tc` IP filtering to apply per-client download bandwidth limits dynamically based on MAC address.
 - **Instant Client Deauthentication**: Native `iw` bindings drop malicious connections instantly. Banning a device via the UI triggers immediate deauthentication.
-- **DNS Sinkhole**: Custom domain blocking via `dnsmasq` `addn-hosts` file. New block entries take effect on `SIGHUP` (`systemctl reload dnsmasq`) — no full restart required. Intercepted queries resolve to a local Nginx splash page.
+- **DNS Sinkhole**: Custom domain blocking via `dnsmasq` `addn-hosts` file. New block entries take effect on `SIGHUP` (`systemctl reload dnsmasq`) — no full restart required. Intercepted queries resolve to a captive portal splash page.
 - **Advanced Kernel Routing**: Automated MASQUERADE NAT providing captive portal foundations and internet sharing over the WAN interface.
 - **Encrypted Authentication**: End-to-end `PyJWT` + `bcrypt` backend security locking down all critical API commands.
+- **User Credential Management**: Change your password via the Settings tab. The current password must be verified before the new one is set.
 - **Clean Shutdown**: Full iptables cleanup, IP forwarding reset, interface IP flush, and NetworkManager handback on hotspot stop. Leaves the system in its original state.
 
 ## 🚀 Installation & Setup
@@ -45,28 +46,37 @@ SpotMan is a comprehensive, asynchronous API and React-driven control panel buil
    ```bash
    sudo systemctl start spotman
    ```
-   *First login credentials — **Username**: `admin`, **Password**: `admin`. Please change these immediately after first login.*
 
-4. **Start the Development Server (optional, for dev/testing):**
-   ```bash
-   ./scripts/start-dev.sh
+4. **Open the web UI:**
    ```
-   *The React UI will run on `http://localhost:5173` and the FastAPI backend on `http://localhost:8000`.*
+   http://localhost:5173
+   ```
 
-## 🔧 DNS Sinkhole How It Works
-1. Blocked domains are written to `backend/config/custom_blocks.conf` in hosts-file format: `10.0.0.1 example.com`.
-2. The dnsmasq template uses `addn-hosts=` to load this file. Sending `SIGHUP` via `systemctl reload dnsmasq` re-reads the file — no full restart needed.
-3. Traffic to blocked domains resolves to the sinkhole IP (`10.0.0.1` by default), which Nginx serves a custom block page from.
+5. **Login** with any credentials (first login creates the admin account) — **Username**: `admin`, **Password**: `admin`. Change immediately after login.
 
-## 🛠️ Hotspot Lifecycle
+## 📖 Documentation
+
+Full documentation is available in the `docs/` folder. Start with [docs/index.md](docs/index.md).
+
+**Quick links:**
+- [Quick Start & Architecture](docs/index.md#quick-start)
+- [First Login & Credential Change](docs/index.md#first-login--credential-change)
+- [Hotspot Management](docs/index.md#hotspot-management)
+- [Device Management](docs/index.md#device-management)
+- [DNS Sinkhole](docs/index.md#dns-sinkhole)
+- [Traffic Shaping](docs/index.md#traffic-shaping)
+- [API Reference](docs/index.md#api-reference)
+- [Troubleshooting](docs/index.md#troubleshooting)
+
+## 🔧 Hotspot Lifecycle
 
 **Start sequence:**
 1. NetworkManager releases the wLAN interface (`nmcli device set wlan managed no`)
-2. Static IP `10.0.0.1/24` assigned to the wLAN interface
+2. Static IP `10.0.0.1/24` assigned to wLAN
 3. `hostapd.conf` and `dnsmasq.conf` rendered from templates and copied to `/etc/`
-4. `hostapd` and `dnsmasq` restarted
-5. Readiness polling confirms both services are `active` (up to 10 × 0.5s)
-6. NAT iptables rules applied (existing POSTROUTING/FORWARD flushed first)
+4. `hostapd` and `dnsmasq` started
+5. Readiness polling confirms both services are `active` (up to 10 retries × 0.5s)
+6. NAT iptables rules applied (existing rules flushed first)
 7. Traffic shaping initialized (`tc` HTB root qdisc on wLAN)
 
 **Stop sequence:**
@@ -74,29 +84,14 @@ SpotMan is a comprehensive, asynchronous API and React-driven control panel buil
 2. NAT iptables rules flushed (POSTROUTING + FORWARD)
 3. `net.ipv4.ip_forward` reset to `0`
 4. Static IP flushed from wLAN interface
-5. NetworkManager regains control of wLAN (`nmcli device set wlan managed yes`)
-6. `tc` root qdisc removed from wLAN
+5. NetworkManager regains control of wLAN
+6. `tc` root qdisc removed
 
 ## ⚠️ Limitations
-- **OS Dependency**: Designed for Debian/Ubuntu environments with `systemd` and `apt`. Other distributions may require adjustments to `install.sh` and service paths.
-- **Interface Detection**: WAN and wLAN interfaces are auto-detected via default route and `/sys/class/net/*/wireless`. Falls back to `eth0`/`wlan0` if detection fails. For non-standard setups, edit the detection functions in `utils/network.py`.
-- **Bandwidth Shaping**: Currently enforces download (RX) limits only. Upload (TX) shaping is not yet implemented despite having database fields for it.
-- **Database**: Uses SQLite for localized storage. For enterprise deployments handling thousands of concurrent authentications, migrating `models/database.py` to PostgreSQL is recommended.
-
-## 📂 Project Structure
-```
-SpotMan/
-├── backend/
-│   ├── app/
-│   │   ├── api/                    # FastAPI route handlers
-│   │   ├── core/                   # Core logic (hotspot, dns, traffic, devices)
-│   │   ├── models/                 # Database models & connection
-│   │   └── utils/                  # System commands & network helpers
-│   ├── config/                     # Templates (dnsmasq, hostapd, nginx, block page)
-│   └── systemd/                    # SpotMan systemd service unit
-├── frontend/                       # React UI (Vite)
-└── scripts/                        # install.sh
-```
+- **OS Dependency**: Designed for Debian/Ubuntu with `systemd` and `apt`. Other distros require adjustments to `install.sh`.
+- **Interface Detection**: Auto-detects WAN via default route and wLAN via `/sys/class/net/*/wireless`. Falls back to `eth0`/`wlan0`.
+- **Bandwidth Shaping**: Currently enforces **download (RX) only**. Upload (TX) shaping is planned.
+- **Database**: SQLite for localized storage. For enterprise scale with thousands of concurrent authentications, consider migrating to PostgreSQL.
 
 ## 👨‍💻 Author
 **Uzair Mughal**
