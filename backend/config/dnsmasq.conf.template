@@ -7,4 +7,4 @@ server=8.8.4.4
 listen-address=127.0.0.1,{{ gateway_ip }}
 bind-interfaces
 # Include custom domains for blocking
-conf-file={{ base_dir }}/config/custom_blocks.conf
+addn-hosts={{ base_dir }}/config/custom_blocks.conf

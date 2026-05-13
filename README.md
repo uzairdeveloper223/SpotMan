@@ -22,9 +22,10 @@ SpotMan is a comprehensive, asynchronous API and React-driven control panel buil
 - **Real-Time Telemetry**: Live websocket streams monitoring bandwidth and active endpoints.
 - **Hardware-Level Traffic Shaping**: Uses Hierarchical Token Buckets (`htb`) and `tc` IP filtering to apply strict upload/download throttles dynamically per MAC address.
 - **Instant Client Deauthentication**: Native `iw` bindings drop malicious connections instantly without rebooting the access point.
-- **DNS Sinkhole**: Custom domain blocking with `dnsmasq` overriding, intercepting queries and routing them to a custom Nginx splash page.
+- **DNS Sinkhole**: Custom domain blocking with `dnsmasq` `addn-hosts` override, intercepting queries and routing them to a custom Nginx splash page. SIGHUP reloads block rules without service restart.
 - **Advanced Kernel Routing**: Automated MASQUERADE NAT providing captive portal foundations and internet sharing.
 - **Encrypted Authentication**: End-to-end `PyJWT` backend security locking down all critical commands.
+- **Clean Shutdown**: Full iptables cleanup, IP forwarding reset, interface IP flush, and NetworkManager handback on hotspot stop.
 
 ## 🚀 Installation & Setup
 
@@ -38,7 +39,7 @@ SpotMan is a comprehensive, asynchronous API and React-driven control panel buil
    ```bash
    sudo ./scripts/install.sh
    ```
-   *This automatically sets up `sudoers` rules, Nginx templates, and installs OS dependencies (`hostapd`, `dnsmasq`, `iw`, etc.).*
+   *This automatically sets up `sudoers` rules, Nginx templates, installs OS dependencies (`hostapd`, `dnsmasq`, `iw`, `iproute2`, `iptables`, `sqlite3`, `python3-venv`), creates the empty `custom_blocks.conf`, and configures the default hostapd path.*
 
 3. **Start the Development Server:**
    ```bash
@@ -53,9 +54,18 @@ By default, the SQLite database is bootstrapped with the following administrativ
 
 *Note: Please change these credentials or manually modify the `users` SQLite table before rolling out to production.*
 
+## 🔧 DNS Sinkhole How It Works
+1. Blocked domains are written to `backend/config/custom_blocks.conf` in hosts-file format (`10.0.0.1 example.com`).
+2. The dnsmasq template uses `addn-hosts=` to load this file — `SIGHUP` (via `systemctl reload dnsmasq`) picks up changes without a full restart.
+3. Traffic to blocked domains resolves to the sinkhole IP (default `10.0.0.1`), which Nginx serves a custom block page from.
+
+## 🛠️ Hotspot Lifecycle
+- **Start**: NetworkManager releases the wLAN interface → static IP assigned → hostapd + dnsmasq started → readiness verified via polling → NAT iptables rules applied (flushed first) → traffic shaping (tc HTB) initialized.
+- **Stop**: hostapd + dnsmasq stopped → iptables POSTROUTING/FORWARD flushed → `ip_forward` reset to 0 → wLAN IP flushed → NetworkManager regains control → tc root qdisc removed.
+
 ## ⚠️ Limitations
 - **OS Dependency**: Highly tailored for Debian/Ubuntu environments relying heavily on `systemd` and `apt` availability.
-- **Interface Naming**: Currently defaults to standard `wlan0` and `eth0` network namespaces. For custom network interfaces, core configuration template overrides are required.
+- **Interface Naming**: Currently auto-detects WAN and wLAN interfaces via default route and `/sys/class/net`. For custom network interfaces, core configuration template overrides are required.
 - **Concurrency**: SQLite is utilized for localized storage; for massive enterprise scales handling thousands of parallel authentications, migrating `database.py` to PostgreSQL is recommended.
 
 ## 👨‍💻 Author

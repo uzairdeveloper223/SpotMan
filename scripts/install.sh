@@ -39,17 +39,23 @@ cat << EOF > /etc/sudoers.d/spotman
 %sudo ALL=(ALL) NOPASSWD: /sbin/tc *
 %sudo ALL=(ALL) NOPASSWD: /sbin/iptables *
 %sudo ALL=(ALL) NOPASSWD: /sbin/sysctl -w net.ipv4.ip_forward=1
+%sudo ALL=(ALL) NOPASSWD: /sbin/sysctl -w net.ipv4.ip_forward=0
 %sudo ALL=(ALL) NOPASSWD: /bin/ip addr *
 %sudo ALL=(ALL) NOPASSWD: /bin/systemctl restart hostapd
 %sudo ALL=(ALL) NOPASSWD: /bin/systemctl restart dnsmasq
 %sudo ALL=(ALL) NOPASSWD: /bin/cp /tmp/spotman_hostapd.conf /etc/hostapd/hostapd.conf
 %sudo ALL=(ALL) NOPASSWD: /bin/cp /tmp/spotman_dnsmasq.conf /etc/dnsmasq.d/spotman.conf
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/nmcli device set * managed *
 EOF
 chmod 0440 /etc/sudoers.d/spotman
 
 echo "[*] Ensuring dependencies..."
 apt-get update
 apt-get install -y hostapd dnsmasq nginx iw iproute2 iptables sqlite3 python3-venv
+
+echo "[*] Creating empty custom_blocks.conf..."
+mkdir -p /opt/spotman/backend/config
+touch /opt/spotman/backend/config/custom_blocks.conf
 
 echo "[*] Configuring default hostapd path..."
 sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|g' /etc/default/hostapd || true

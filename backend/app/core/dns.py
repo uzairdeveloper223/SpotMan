@@ -13,9 +13,9 @@ async def get_sinkhole_status() -> dict:
         with open(DNSMASQ_CUSTOM_BLOCKS, "r") as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("address=/"):
-                    parts = line.split("/")
-                    if len(parts) >= 3:
+                if line and not line.startswith("#"):
+                    parts = line.split()
+                    if len(parts) >= 2:
                         domains.append(parts[1])
     return {
         "active": DNSMASQ_CUSTOM_BLOCKS.exists(),
@@ -24,31 +24,32 @@ async def get_sinkhole_status() -> dict:
 
 async def add_blocked_domain(domain: str, sinkhole_ip: str = "10.0.0.1") -> None:
     # Add an entry to custom blocks conf
-    entry = f"address=/{domain}/{sinkhole_ip}\n"
-    
+    entry = f"{sinkhole_ip} {domain}\n"
+
     # Check if domain is already blocked
     if DNSMASQ_CUSTOM_BLOCKS.exists():
         with open(DNSMASQ_CUSTOM_BLOCKS, "r") as f:
-            if entry in f.readlines():
+            if f"{sinkhole_ip} {domain}" in f.read():
                 return
-                
+
     with open(DNSMASQ_CUSTOM_BLOCKS, "a") as f:
         f.write(entry)
-        
+
     await reload_dnsmasq()
 
 async def remove_blocked_domain(domain: str) -> None:
     if not DNSMASQ_CUSTOM_BLOCKS.exists():
         return
-        
+
     with open(DNSMASQ_CUSTOM_BLOCKS, "r") as f:
         lines = f.readlines()
-        
+
     with open(DNSMASQ_CUSTOM_BLOCKS, "w") as f:
         for line in lines:
-            if not line.startswith(f"address=/{domain}/"):
+            stripped = line.strip()
+            if stripped and not (stripped.endswith(f" {domain}") or stripped == domain):
                 f.write(line)
-                
+
     await reload_dnsmasq()
 
 async def reload_dnsmasq() -> None:
