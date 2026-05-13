@@ -100,4 +100,5 @@ Full documentation is available in the `docs/` folder. Start with [docs/index.md
 - ✉️ **Email**: contact@uzair.is-a.dev
 
 ## 📄 License
-This project is licensed under the MIT License.
+
+See [LICENSE](LICENSE)
