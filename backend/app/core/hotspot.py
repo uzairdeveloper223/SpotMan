@@ -100,8 +100,6 @@ async def setup_nat(wan_interface: str, wlan_interface: str) -> None:
     await run_command(["sudo", "iptables", "-A", "FORWARD", "-i", wan_interface, "-o", wlan_interface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"])
 
 async def stop_hotspot() -> None:
-    import pathlib
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     wlan = get_wlan_interface()
 
     await run_command(["sudo", "systemctl", "stop", "hostapd"])
